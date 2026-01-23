@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Ruler, Activity, Info } from 'lucide-react';
+import { Ruler, Activity, Info, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { calculateMSE, calculatePSNR, calculateBPP } from '@/lib/stego/metrics';
+import { Card } from '@/components/ui/card';
+import { calculateMSE, calculatePSNR } from '@/lib/stego/metrics';
 
 export function MetricsTab() {
   const [coverImage, setCoverImage] = React.useState<string | null>(null);
@@ -46,44 +47,52 @@ export function MetricsTab() {
     try {
       const mse = calculateMSE(coverData, stegoData);
       const psnr = calculatePSNR(mse);
-      // Assume 1 bit per pixel was the target if MSE > 0, otherwise 0
       const bpp = mse > 0 ? 1 : 0; 
       
       setMetrics({ mse, psnr, bpp });
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message);
     }
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-card border rounded-xl p-8 space-y-8">
+    <div className="max-w-5xl mx-auto space-y-8 pb-20">
+      <Card className="p-8 border-[#e1e4e8] shadow-sm bg-white space-y-8 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-[#6366f1]" />
+        
         <div className="flex flex-col md:flex-row gap-8">
           <div className="flex-1 space-y-4">
-            <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Cover Image (Original)</h3>
-            <div className="aspect-square bg-muted/30 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden relative">
+            <h3 className="font-bold text-xs uppercase tracking-widest text-slate-400">Cover Image (Original)</h3>
+            <div className="aspect-square bg-slate-50 rounded-2xl border-2 border-dashed border-[#e1e4e8] flex items-center justify-center overflow-hidden relative group hover:border-[#6366f1]/50 transition-all">
               {coverImage ? (
                 <img src={coverImage} className="w-full h-full object-cover" alt="Cover" />
               ) : (
-                <p className="text-xs text-muted-foreground">Upload Cover</p>
+                <div className="text-center p-4">
+                  <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2 group-hover:text-[#6366f1] transition-colors" />
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Upload Cover</p>
+                </div>
               )}
               <input type="file" onChange={(e) => handleFileUpload(e, 'cover')} className="absolute inset-0 opacity-0 cursor-pointer" />
             </div>
           </div>
 
           <div className="flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-sidebar-primary/10 flex items-center justify-center text-sidebar-primary">
+            <div className="w-12 h-12 rounded-full bg-[#6366f1]/10 flex items-center justify-center text-[#6366f1]">
               <Ruler className="w-6 h-6" />
             </div>
           </div>
 
           <div className="flex-1 space-y-4">
-            <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Stego Image (Modified)</h3>
-            <div className="aspect-square bg-muted/30 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden relative">
+            <h3 className="font-bold text-xs uppercase tracking-widest text-slate-400">Stego Image (Modified)</h3>
+            <div className="aspect-square bg-slate-50 rounded-2xl border-2 border-dashed border-[#e1e4e8] flex items-center justify-center overflow-hidden relative group hover:border-[#6366f1]/50 transition-all">
               {stegoImage ? (
                 <img src={stegoImage} className="w-full h-full object-cover" alt="Stego" />
               ) : (
-                <p className="text-xs text-muted-foreground">Upload Stego</p>
+                <div className="text-center p-4">
+                  <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2 group-hover:text-[#6366f1] transition-colors" />
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Upload Stego</p>
+                </div>
               )}
               <input type="file" onChange={(e) => handleFileUpload(e, 'stego')} className="absolute inset-0 opacity-0 cursor-pointer" />
             </div>
@@ -92,10 +101,9 @@ export function MetricsTab() {
 
         <div className="flex justify-center">
           <Button 
-            size="lg" 
-            className="bg-sidebar-primary hover:bg-sidebar-primary/90 px-12"
-            disabled={!coverData || !stegoData}
             onClick={runMetrics}
+            disabled={!coverData || !stegoData}
+            className="bg-[#6366f1] hover:bg-[#4f46e5] px-12 h-14 rounded-xl font-bold text-lg shadow-lg shadow-indigo-100"
           >
             Calculate Fidelity Metrics
           </Button>
@@ -103,39 +111,35 @@ export function MetricsTab() {
 
         {metrics && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in zoom-in-95 duration-300">
-            <div className="p-6 bg-muted/30 rounded-xl border border-border/50 text-center space-y-2">
-              <Activity className="w-5 h-5 text-sidebar-primary mx-auto mb-2" />
-              <p className="text-2xl font-black">{metrics.mse.toFixed(4)}</p>
-              <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Mean Squared Error (MSE)</p>
-              <p className="text-[10px] text-muted-foreground/60 leading-tight">Average of the squares of the errors between pixels.</p>
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center space-y-2">
+              <Activity className="w-5 h-5 text-[#6366f1] mx-auto mb-2" />
+              <p className="text-2xl font-black text-slate-900">{metrics.mse.toFixed(4)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Mean Squared Error</p>
             </div>
             
-            <div className="p-6 bg-muted/30 rounded-xl border border-border/50 text-center space-y-2">
-              <Activity className="w-5 h-5 text-sidebar-primary mx-auto mb-2" />
-              <p className="text-2xl font-black">{metrics.psnr.toFixed(2)} dB</p>
-              <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Peak Signal-to-Noise Ratio</p>
-              <p className="text-[10px] text-muted-foreground/60 leading-tight">Higher values indicate better quality and less distortion.</p>
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center space-y-2">
+              <Activity className="w-5 h-5 text-[#6366f1] mx-auto mb-2" />
+              <p className="text-2xl font-black text-slate-900">{metrics.psnr.toFixed(2)} dB</p>
+              <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Peak Signal-to-Noise Ratio</p>
             </div>
 
-            <div className="p-6 bg-muted/30 rounded-xl border border-border/50 text-center space-y-2">
-              <Activity className="w-5 h-5 text-sidebar-primary mx-auto mb-2" />
-              <p className="text-2xl font-black">{metrics.bpp.toFixed(2)}</p>
-              <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Bits Per Pixel (BPP)</p>
-              <p className="text-[10px] text-muted-foreground/60 leading-tight">Estimated embedding rate based on bit changes.</p>
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 text-center space-y-2">
+              <Activity className="w-5 h-5 text-[#6366f1] mx-auto mb-2" />
+              <p className="text-2xl font-black text-slate-900">{metrics.bpp.toFixed(2)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Bits Per Pixel (Est.)</p>
             </div>
           </div>
         )}
 
-        {!metrics && (
-          <div className="flex items-start gap-3 p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
-            <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-            <div className="text-xs text-blue-500/80 leading-relaxed">
-              <strong>Comparison Guide:</strong> To get accurate MSE/PSNR metrics, the Cover and Stego images must have identical dimensions. 
-              PSNR values above 40dB are generally considered "high fidelity" where distortion is nearly invisible to the human eye.
-            </div>
+        <div className="flex items-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+          <Info className="w-5 h-5 text-[#6366f1] shrink-0 mt-0.5" />
+          <div className="text-xs text-slate-500 leading-relaxed">
+            <strong className="text-slate-900 block mb-1">Comparison Protocol:</strong>
+            To calculate PSNR/MSE, images must have identical dimensions. 
+            PSNR values above 40dB indicate high visual fidelity. Values below 30dB suggest significant statistical deviation likely detectable by forensic tools.
           </div>
-        )}
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -6,26 +6,42 @@ import { AnalyzeTab } from './tabs/AnalyzeTab';
 import { EncodeDecodeTab } from './tabs/EncodeDecodeTab';
 import { MetricsTab } from './tabs/MetricsTab';
 import { ReportsTab } from './tabs/ReportsTab';
+import { Badge } from '@/components/ui/badge';
+import { Lock } from 'lucide-react';
 
 export function MainLayout() {
   const [activeTab, setActiveTab] = React.useState<TabType>('analyze');
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen bg-white text-slate-900 overflow-hidden font-sans">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm">
-          <h1 className="text-xl font-semibold capitalize">
-            {activeTab.replace('-', ' / ')}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Branding Title - Top Center */}
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">
+            StegAnalyzer
           </h1>
-        </header>
+        </div>
+
+        {/* Forensic Badge - Top Right */}
+        <div className="absolute top-4 right-6 z-10">
+          <Badge variant="outline" className="bg-white/50 backdrop-blur-sm border-[#e1e4e8] text-slate-600 px-3 py-1 flex items-center gap-2 shadow-sm">
+            <Lock size={12} className="text-[#6366f1]" />
+            <span>Client-side Forensic Analysis</span>
+          </Badge>
+        </div>
+
+        {/* Header Spacer (since title is absolute) */}
+        <header className="h-24 flex items-center px-6" />
         
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'analyze' && <AnalyzeTab />}
-          {activeTab === 'encode-decode' && <EncodeDecodeTab />}
-          {activeTab === 'metrics' && <MetricsTab />}
-          {activeTab === 'reports' && <ReportsTab />}
+        <div className="flex-1 overflow-y-auto p-8 pt-4">
+          <div className="max-w-6xl mx-auto w-full">
+            {activeTab === 'analyze' && <AnalyzeTab />}
+            {activeTab === 'encode-decode' && <EncodeDecodeTab />}
+            {activeTab === 'metrics' && <MetricsTab />}
+            {activeTab === 'reports' && <ReportsTab />}
+          </div>
         </div>
       </main>
     </div>

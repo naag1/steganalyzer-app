@@ -1,10 +1,24 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, ShieldAlert, BarChart, FileSearch, Trash2 } from 'lucide-react';
+import { 
+  Upload, 
+  ShieldAlert, 
+  BarChart, 
+  FileSearch, 
+  Trash2, 
+  Download, 
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  History
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { chiSquareAttack, calculateBPCS } from '@/lib/stego/analysis';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { forensicScan } from '@/lib/stego/analysis';
+import { calculateMetrics } from '@/lib/stego/metrics';
 import { 
   BarChart as RechartsBarChart, 
   Bar, 
@@ -15,18 +29,25 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
+import { cn } from '@/lib/utils';
 
 interface AnalysisResult {
   id: string;
   name: string;
   probability: number;
-  bpcs: number[];
+  bpcs?: number[];
   status: 'pending' | 'analyzing' | 'completed';
+  detected: boolean;
+  type?: string;
+  message?: string;
+  file: File;
 }
 
 export function AnalyzeTab() {
   const [results, setResults] = React.useState<AnalysisResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
+  const [compareImages, setCompareImages] = React.useState<{ cover?: File, stego?: File }>({});
+  const [metricsResult, setMetricsResult] = React.useState<{ psnr: number, mse: number } | null>(null);
 
   const onFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -36,11 +57,12 @@ export function AnalyzeTab() {
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       probability: 0,
-      bpcs: [],
-      status: 'pending'
+      status: 'pending',
+      detected: false,
+      file: file
     }));
 
-    setResults(prev => [...prev, ...newResults]);
+    setResults(prev => [...newResults, ...prev]);
     processFiles(Array.from(files), newResults);
   };
 
@@ -51,12 +73,41 @@ export function AnalyzeTab() {
       const file = files[i];
       const meta = metadata[i];
 
-      updateResultStatus(meta.id, 'analyzing');
+      setResults(prev => prev.map(r => r.id === meta.id ? { ...r, status: 'analyzing' } : r));
 
-      const img = new Image();
-      const reader = new FileReader();
+      const scanResult = await forensicScan(file);
 
-      const analysisPromise = new Promise<void>((resolve) => {
+      setResults(prev => prev.map(r => r.id === meta.id ? { 
+        ...r, 
+        ...scanResult,
+        status: 'completed'
+      } : r));
+    }
+    
+    setIsAnalyzing(false);
+  };
+
+  const removeResult = (id: string) => {
+    setResults(prev => prev.filter(r => r.id !== id));
+  };
+
+  const downloadMessage = (message: string, filename: string) => {
+    const blob = new Blob([message], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `extracted_${filename}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const runMetrics = async () => {
+    if (!compareImages.cover || !compareImages.stego) return;
+    
+    const getImageData = (file: File): Promise<Uint8ClampedArray> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        const reader = new FileReader();
         reader.onload = (e) => {
           img.onload = () => {
             const canvas = document.createElement('canvas');
@@ -64,184 +115,283 @@ export function AnalyzeTab() {
             canvas.height = img.height;
             const ctx = canvas.getContext('2d')!;
             ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, img.width, img.height).data;
-
-            const prob = chiSquareAttack(imageData);
-            const bpcs = calculateBPCS(imageData);
-
-            updateResult(meta.id, {
-              probability: prob,
-              bpcs: bpcs,
-              status: 'completed'
-            });
-            resolve();
+            resolve(ctx.getImageData(0, 0, img.width, img.height).data);
           };
           img.src = e.target?.result as string;
         };
         reader.readAsDataURL(file);
       });
+    };
 
-      await analysisPromise;
-    }
-    
-    setIsAnalyzing(false);
-  };
-
-  const updateResultStatus = (id: string, status: AnalysisResult['status']) => {
-    setResults(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-  };
-
-  const updateResult = (id: string, data: Partial<AnalysisResult>) => {
-    setResults(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
-  };
-
-  const removeResult = (id: string) => {
-    setResults(prev => prev.filter(r => r.id !== id));
-  };
-
-  const getRiskColor = (prob: number) => {
-    if (prob > 0.7) return 'text-destructive';
-    if (prob > 0.3) return 'text-yellow-500';
-    return 'text-green-500';
+    const coverData = await getImageData(compareImages.cover);
+    const stegoData = await getImageData(compareImages.stego);
+    const metrics = calculateMetrics(coverData, stegoData);
+    setMetricsResult(metrics);
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 space-y-4">
-          <div className="p-6 rounded-xl border-2 border-dashed border-border hover:border-sidebar-primary/50 transition-colors flex flex-col items-center justify-center gap-4 bg-card/50">
-            <div className="w-12 h-12 rounded-full bg-sidebar-primary/10 flex items-center justify-center text-sidebar-primary">
-              <Upload className="w-6 h-6" />
-            </div>
-            <div className="text-center">
-              <p className="font-medium">Upload Forensic Batch</p>
-              <p className="text-xs text-muted-foreground mt-1">Images or .txt files supported</p>
-            </div>
-            <input 
-              type="file" 
-              multiple 
-              onChange={onFileUpload} 
-              className="hidden" 
-              id="analyze-upload" 
-            />
-            <Button asChild variant="outline" size="sm">
-              <label htmlFor="analyze-upload" className="cursor-pointer">Browse Files</label>
-            </Button>
+    <div className="space-y-8 max-w-5xl mx-auto pb-20">
+      {/* Batch Upload Area */}
+      <Card className="p-8 border-[#e1e4e8] shadow-sm bg-white overflow-hidden relative group">
+        <div className="absolute top-0 left-0 w-1 h-full bg-[#6366f1]" />
+        <div className="flex flex-col items-center justify-center gap-6 py-4">
+          <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-[#6366f1] group-hover:scale-110 transition-transform duration-300">
+            <Upload className="w-8 h-8" />
           </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-bold text-slate-900">Forensic Batch Analysis</h2>
+            <p className="text-slate-500 max-w-md">
+              Upload multiple images or audio files (.wav) for automatic steganographic detection and extraction.
+            </p>
+          </div>
+          <input 
+            type="file" 
+            multiple 
+            onChange={onFileUpload} 
+            className="hidden" 
+            id="analyze-upload" 
+          />
+          <Button asChild className="bg-[#6366f1] hover:bg-[#4f46e5] text-white px-8 rounded-full shadow-lg shadow-indigo-100">
+            <label htmlFor="analyze-upload" className="cursor-pointer">Start Batch Scan</label>
+          </Button>
+        </div>
+      </Card>
 
-          <div className="bg-card border rounded-xl p-4 space-y-3">
-            <h3 className="font-semibold flex items-center gap-2">
-              <FileSearch className="w-4 h-4 text-sidebar-primary" />
-              Scan History
-            </h3>
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Results Sidebar */}
+        <div className="lg:col-span-1 space-y-6">
+          <Card className="border-[#e1e4e8] shadow-sm bg-white">
+            <div className="p-4 border-b border-[#e1e4e8] flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <History className="w-4 h-4 text-[#6366f1]" />
+                Recent Scans
+              </h3>
+              {results.length > 0 && (
+                <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+                  {results.length} files
+                </Badge>
+              )}
+            </div>
+            <div className="p-2 space-y-2 max-h-[500px] overflow-y-auto">
               {results.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">No files scanned yet.</p>
+                <div className="py-12 text-center">
+                  <Search className="w-8 h-8 text-slate-200 mx-auto mb-3" />
+                  <p className="text-sm text-slate-400 font-medium">No files scanned</p>
+                </div>
               )}
               {results.map(result => (
-                <div key={result.id} className="p-3 rounded-lg border bg-background group relative transition-all hover:ring-1 hover:ring-sidebar-primary/30">
+                <div 
+                  key={result.id} 
+                  className={cn(
+                    "p-3 rounded-xl border bg-white transition-all duration-200 group relative",
+                    result.status === 'completed' && result.detected ? "border-red-100 bg-red-50/30" : "border-[#e1e4e8]"
+                  )}
+                >
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-medium truncate max-w-[150px]">{result.name}</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xs font-bold text-slate-700 truncate">{result.name}</span>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-tighter">
+                        {result.type || 'Unknown'}
+                      </span>
+                    </div>
                     <button 
                       onClick={() => removeResult(result.id)}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-slate-300 hover:text-red-500 transition-colors"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                  
                   {result.status === 'analyzing' ? (
-                    <Progress value={45} className="h-1" />
-                  ) : (
+                    <div className="space-y-1">
+                      <Progress value={65} className="h-1 bg-slate-100" />
+                      <span className="text-[10px] text-[#6366f1] animate-pulse">Analyzing entropy...</span>
+                    </div>
+                  ) : result.status === 'completed' && (
                     <div className="flex items-center justify-between">
-                      <span className={cn("text-xs font-bold", getRiskColor(result.probability))}>
-                        {Math.round(result.probability * 100)}% Probability
-                      </span>
-                      <span className="text-[10px] text-muted-foreground uppercase">
-                        {result.probability > 0.5 ? 'Suspicious' : 'Clean'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {result.detected ? (
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                        )}
+                        <span className={cn(
+                          "text-[10px] font-black uppercase tracking-widest",
+                          result.detected ? "text-red-600" : "text-green-600"
+                        )}>
+                          {result.detected ? 'Steganography Detected' : 'Clean'}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
               ))}
             </div>
-          </div>
-        </div>
+          </Card>
 
-        <div className="md:col-span-2 space-y-6">
-          {results.length > 0 ? (
-            results.map(result => result.status === 'completed' ? (
-              <div key={result.id + '-detail'} className="bg-card border rounded-xl p-6 space-y-6 animate-in zoom-in-95 duration-300">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                      <ShieldAlert className={cn("w-5 h-5", getRiskColor(result.probability))} />
-                      Analysis: {result.name}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">Forensic identification complete</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={cn("text-2xl font-black", getRiskColor(result.probability))}>
-                      {Math.round(result.probability * 100)}%
-                    </span>
-                    <p className="text-[10px] uppercase tracking-widest font-bold">Risk Score</p>
-                  </div>
+          {/* Metrics Tool */}
+          <Card className="border-[#e1e4e8] shadow-sm bg-white p-6 space-y-4">
+            <h3 className="font-bold text-slate-900 flex items-center gap-2">
+              <BarChart className="w-4 h-4 text-[#6366f1]" />
+              Image Comparison
+            </h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Cover Image</label>
+                  <input type="file" className="hidden" id="cover-up" onChange={(e) => setCompareImages(p => ({ ...p, cover: e.target.files?.[0] }))} />
+                  <Button asChild variant="outline" size="sm" className="w-full h-20 border-dashed text-slate-400 hover:text-[#6366f1]">
+                    <label htmlFor="cover-up" className="cursor-pointer flex flex-col items-center justify-center p-2 text-center">
+                      <Upload size={14} className="mb-1" />
+                      <span className="text-[9px] truncate w-full">{compareImages.cover?.name || 'Select Cover'}</span>
+                    </label>
+                  </Button>
                 </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                      <BarChart className="w-4 h-4" />
-                      BPCS Bit Plane Complexity
-                    </h4>
-                    <div className="h-[200px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RechartsBarChart data={result.bpcs.map((v, i) => ({ plane: i, complexity: v }))}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                          <XAxis dataKey="plane" fontSize={10} axisLine={false} tickLine={false} />
-                          <YAxis fontSize={10} axisLine={false} tickLine={false} domain={[0, 1]} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', fontSize: '10px' }}
-                          />
-                          <Bar dataKey="complexity" radius={[4, 4, 0, 0]}>
-                            {result.bpcs.map((_, index) => (
-                              <Cell key={`cell-${index}`} fill={index === 0 ? 'var(--sidebar-primary)' : 'hsl(var(--muted-foreground))'} />
-                            ))}
-                          </Bar>
-                        </RechartsBarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold">Forensic Findings</h4>
-                    <ul className="space-y-2">
-                      <li className="flex items-center justify-between p-2 rounded bg-muted/30 text-xs">
-                        <span>Chi-Square Probability</span>
-                        <span className="font-mono">{(result.probability).toFixed(4)}</span>
-                      </li>
-                      <li className="flex items-center justify-between p-2 rounded bg-muted/30 text-xs">
-                        <span>High Complexity Planes</span>
-                        <span className="font-mono">{result.bpcs.filter(v => v > 0.4).length}</span>
-                      </li>
-                      <li className="flex items-center justify-between p-2 rounded bg-muted/30 text-xs">
-                        <span>LSB Anomaly Detected</span>
-                        <span className="font-mono">{result.probability > 0.4 ? 'YES' : 'NO'}</span>
-                      </li>
-                      <li className="flex items-center justify-between p-2 rounded bg-muted/30 text-xs">
-                        <span>Visual Artifacts</span>
-                        <span className="font-mono">NONE</span>
-                      </li>
-                    </ul>
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Stego Image</label>
+                  <input type="file" className="hidden" id="stego-up" onChange={(e) => setCompareImages(p => ({ ...p, stego: e.target.files?.[0] }))} />
+                  <Button asChild variant="outline" size="sm" className="w-full h-20 border-dashed text-slate-400 hover:text-[#6366f1]">
+                    <label htmlFor="stego-up" className="cursor-pointer flex flex-col items-center justify-center p-2 text-center">
+                      <Upload size={14} className="mb-1" />
+                      <span className="text-[9px] truncate w-full">{compareImages.stego?.name || 'Select Stego'}</span>
+                    </label>
+                  </Button>
                 </div>
               </div>
-            ) : null).reverse()
+              <Button 
+                onClick={runMetrics} 
+                disabled={!compareImages.cover || !compareImages.stego}
+                className="w-full bg-[#6366f1] hover:bg-[#4f46e5]"
+              >
+                Compare Fidelity
+              </Button>
+              {metricsResult && (
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="text-center">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">PSNR</p>
+                    <p className="text-sm font-black text-slate-700">{metricsResult.psnr.toFixed(2)} dB</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">MSE</p>
+                    <p className="text-sm font-black text-slate-700">{metricsResult.mse.toFixed(2)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Forensic Detail View */}
+        <div className="lg:col-span-2 space-y-6">
+          {results.some(r => r.status === 'completed') ? (
+            results.filter(r => r.status === 'completed').map(result => (
+              <Card key={result.id + '-detail'} className="p-8 border-[#e1e4e8] shadow-sm bg-white relative overflow-hidden">
+                <div className={cn(
+                  "absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 rounded-full opacity-10 blur-3xl",
+                  result.detected ? "bg-red-500" : "bg-green-500"
+                )} />
+                
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                      <ShieldAlert className={cn("w-6 h-6", result.detected ? "text-red-500" : "text-green-500")} />
+                      Forensic Audit: {result.name}
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-1">
+                      Comprehensive multi-algorithm signature scan result.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <Badge className={cn(
+                      "px-4 py-1 text-sm font-bold uppercase tracking-wider",
+                      result.detected ? "bg-red-500 text-white" : "bg-green-500 text-white"
+                    )}>
+                      {result.detected ? 'Positive Detection' : 'Clean / Negative'}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-end">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Statistical Probability</h4>
+                        <span className={cn("text-lg font-black", result.detected ? "text-red-500" : "text-slate-700")}>
+                          {Math.round(result.probability * 100)}%
+                        </span>
+                      </div>
+                      <Progress value={result.probability * 100} className={cn("h-2 bg-slate-100", result.detected ? "[&>div]:bg-red-500" : "[&>div]:bg-green-500")} />
+                    </div>
+
+                    {result.bpcs && (
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                          <BarChart className="w-3.5 h-3.5" />
+                          Bit Plane Complexity (BPCS)
+                        </h4>
+                        <div className="h-[180px] w-full bg-slate-50/50 rounded-xl p-4">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsBarChart data={result.bpcs.map((v, i) => ({ plane: i, complexity: v }))}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e1e4e8" />
+                              <XAxis dataKey="plane" fontSize={10} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8' }} />
+                              <YAxis fontSize={10} axisLine={false} tickLine={false} domain={[0, 1]} tick={{ fill: '#94a3b8' }} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e1e4e8', fontSize: '10px' }}
+                              />
+                              <Bar dataKey="complexity" radius={[4, 4, 0, 0]}>
+                                {result.bpcs.map((_, index) => (
+                                  <Cell key={`cell-${index}`} fill={index < 3 ? '#6366f1' : '#cbd5e1'} />
+                                ))}
+                              </Bar>
+                            </RechartsBarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-widest">Technical Signature</h4>
+                      <ul className="space-y-3">
+                        <li className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Protocol Detection</span>
+                          <span className="font-mono font-bold text-slate-700">{result.type || 'Generic LSB'}</span>
+                        </li>
+                        <li className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Chi-Square Attack</span>
+                          <span className="font-mono font-bold text-slate-700">{(result.probability).toFixed(4)}</span>
+                        </li>
+                        <li className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">StegX Signature Found</span>
+                          <span className={cn("font-mono font-bold", result.detected ? "text-red-500" : "text-green-500")}>
+                            {result.detected ? 'YES' : 'NO'}
+                          </span>
+                        </li>
+                      </ul>
+
+                      {result.detected && result.message && (
+                        <div className="pt-4 border-t border-slate-200">
+                          <Button 
+                            onClick={() => downloadMessage(result.message!, result.name)}
+                            className="w-full bg-[#6366f1] hover:bg-[#4f46e5] flex items-center gap-2 py-6 rounded-xl"
+                          >
+                            <Download className="w-4 h-4" />
+                            Download Hidden Message
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )).reverse()
           ) : (
-            <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 border-2 border-dashed rounded-xl bg-card/30">
-              <FileSearch className="w-12 h-12 text-muted-foreground/30 mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground">Ready for Investigation</h3>
-              <p className="text-sm text-muted-foreground/60 max-w-md mx-auto mt-2">
-                Upload images or text files to begin the forensic steganalysis process. Orchid Pro will perform multi-layered statistical attacks.
+            <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-[#e1e4e8] rounded-3xl bg-slate-50/30">
+              <FileSearch className="w-16 h-16 text-slate-200 mb-6" />
+              <h3 className="text-xl font-bold text-slate-400">Awaiting Forensic Input</h3>
+              <p className="text-sm text-slate-400 max-w-sm mx-auto mt-2 leading-relaxed">
+                Start by uploading files to the batch analysis area. Detailed forensic insights and extracted data will appear here.
               </p>
             </div>
           )}
@@ -249,8 +399,4 @@ export function AnalyzeTab() {
       </div>
     </div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
 }

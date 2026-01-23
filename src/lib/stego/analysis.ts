@@ -1,11 +1,11 @@
+import { decodeLSB, decodeAudioLSB } from './codec';
+
 /**
  * Performs a Chi-Square attack on an image to detect LSB steganography.
  * Returns the probability of steganographic content.
  */
 export function chiSquareAttack(data: Uint8ClampedArray): number {
   const counts = new Array(256).fill(0);
-  // Analyze only the LSB of the Red channel for simplicity in this forensic view
-  // or all RGB channels. Let's do all RGB.
   for (let i = 0; i < data.length; i += 4) {
     counts[data[i]]++;     // R
     counts[data[i + 1]]++; // G
@@ -27,9 +27,7 @@ export function chiSquareAttack(data: Uint8ClampedArray): number {
     }
   }
 
-  // Simplified p-value calculation or probability score
-  // In a real Chi-Square, we'd use a cumulative distribution function.
-  // Here we return a normalized score where higher means more likely stego.
+  // Normalized score
   const probability = Math.min(chiSquare / (degreesOfFreedom || 1), 1);
   return probability;
 }
@@ -50,25 +48,80 @@ export function detectTextStego(text: string) {
 
 /**
  * BPCS (Bit Plane Complexity Segmentation) simplified.
- * Returns complexity scores for each bit plane (0-7).
  */
 export function calculateBPCS(data: Uint8ClampedArray): number[] {
   const complexities = new Array(8).fill(0);
-  
   for (let bit = 0; bit < 8; bit++) {
     let transitions = 0;
     let totalPossibleTransitions = 0;
-    
-    // Check transitions between adjacent pixels (simplified)
     for (let i = 0; i < data.length - 4; i += 4) {
       const b1 = (data[i] >> bit) & 1;
       const b2 = (data[i + 4] >> bit) & 1;
       if (b1 !== b2) transitions++;
       totalPossibleTransitions++;
     }
-    
-    complexities[bit] = transitions / totalPossibleTransitions;
+    complexities[bit] = transitions / (totalPossibleTransitions || 1);
+  }
+  return complexities;
+}
+
+/**
+ * Forensic Scan for StegX signature
+ */
+export async function forensicScan(file: File): Promise<{ 
+  detected: boolean; 
+  type?: string; 
+  message?: string;
+  probability: number;
+  bpcs?: number[];
+}> {
+  if (file.type.startsWith('image/')) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, img.width, img.height).data;
+          
+          const result = decodeLSB(imageData);
+          const probability = chiSquareAttack(imageData);
+          const bpcs = calculateBPCS(imageData);
+          
+          resolve({
+            detected: result.detected,
+            type: result.type,
+            message: result.message,
+            probability,
+            bpcs
+          });
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  } else if (file.type === 'audio/wav') {
+    const buffer = await file.arrayBuffer();
+    const result = decodeAudioLSB(buffer);
+    return {
+      detected: result.detected,
+      type: result.type,
+      message: result.message,
+      probability: result.detected ? 0.95 : 0.05,
+    };
+  } else if (file.type === 'text/plain') {
+    const text = await file.text();
+    const result = detectTextStego(text);
+    return {
+      detected: result.isSuspicious,
+      type: 'Text Forensic Anomaly',
+      probability: result.isSuspicious ? 0.8 : 0.1,
+    };
   }
   
-  return complexities;
+  return { detected: false, probability: 0 };
 }

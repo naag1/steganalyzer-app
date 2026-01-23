@@ -6,10 +6,8 @@ import {
   Binary, 
   BarChart3, 
   FileText, 
-  Settings,
   ChevronLeft,
   ChevronRight,
-  Menu
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,7 +21,7 @@ interface SidebarProps {
 
 const navItems = [
   { id: 'analyze', label: 'Analyze', icon: ShieldAlert },
-  { id: 'encode-decode', label: 'Encode/Decode', icon: Binary },
+  { id: 'encode-decode', label: 'Encode / Extraction', icon: Binary },
   { id: 'metrics', label: 'Metrics', icon: BarChart3 },
   { id: 'reports', label: 'Reports', icon: FileText },
 ];
@@ -34,24 +32,24 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   return (
     <div 
       className={cn(
-        "flex flex-col h-screen bg-sidebar text-sidebar-foreground transition-all duration-300 border-r border-sidebar-border",
+        "flex flex-col h-screen bg-white transition-all duration-300 border-r border-[#e1e4e8]",
         isCollapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
+      <div className="flex items-center justify-between p-4 border-b border-[#e1e4e8]">
         {!isCollapsed && (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5 text-sidebar-primary-foreground" />
+            <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-lg tracking-tight">Orchid Pro</span>
+            <span className="font-bold text-lg tracking-tight text-slate-900">Orchid Pro</span>
           </div>
         )}
         <Button 
           variant="ghost" 
           size="icon" 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="text-sidebar-foreground hover:bg-sidebar-accent"
+          className="text-slate-500 hover:bg-slate-100"
         >
           {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </Button>
@@ -65,21 +63,20 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg transition-colors group",
               activeTab === item.id 
-                ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                : "hover:bg-sidebar-accent text-sidebar-foreground/80 hover:text-sidebar-foreground"
+                ? "bg-slate-100 text-[#6366f1]" 
+                : "text-slate-600 hover:bg-slate-50 hover:text-[#6366f1]"
             )}
           >
-            <item.icon className={cn("w-5 h-5 shrink-0", activeTab === item.id ? "" : "group-hover:text-sidebar-primary")} />
+            <item.icon className={cn("w-5 h-5 shrink-0", activeTab === item.id ? "text-[#6366f1]" : "text-[#6366f1]")} />
             {!isCollapsed && <span className="font-medium">{item.label}</span>}
           </button>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border">
-        <button className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-sidebar-accent text-sidebar-foreground/80 transition-colors">
-          <Settings className="w-5 h-5 shrink-0" />
-          {!isCollapsed && <span className="font-medium">Settings</span>}
-        </button>
+      <div className="p-4 border-t border-[#e1e4e8]">
+        <div className="flex items-center gap-2 px-2 text-xs text-slate-400">
+          {!isCollapsed && <span>v2.0.0 Pro</span>}
+        </div>
       </div>
     </div>
   );
