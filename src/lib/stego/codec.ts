@@ -100,29 +100,72 @@ export function decodeLSB(data: Uint8ClampedArray): { message?: string; detected
 }
 
 /**
- * Image-in-Image Steganography (4-bit blending)
+ * Image-in-Image Steganography (4-bit blending with StegX header)
+ * Header: 16-bit Width, 16-bit Height (32 bits total)
  */
-export function encodeImageInImage(coverData: Uint8ClampedArray, secretData: Uint8ClampedArray): Uint8ClampedArray {
+export function encodeImageInImage(coverData: Uint8ClampedArray, secretData: Uint8ClampedArray, secretWidth: number, secretHeight: number): Uint8ClampedArray {
   const newData = new Uint8ClampedArray(coverData);
-  for (let i = 0; i < coverData.length; i++) {
-    if ((i + 1) % 4 === 0) continue; // Skip alpha
-    // Cover High 4 bits + Secret High 4 bits (as Cover Low 4 bits)
-    newData[i] = (coverData[i] & 0xF0) | (secretData[i] >> 4);
+  
+  // Embed dimensions in first 32 channels (1 bit each for header)
+  const header = new Uint32Array(1);
+  const view = new DataView(header.buffer);
+  view.setUint16(0, secretWidth, false);
+  view.setUint16(2, secretHeight, false);
+  
+  const headerBits = header[0];
+  
+  // Header embedding (LSB 1-bit)
+  for (let i = 0; i < 32; i++) {
+    const bit = (headerBits >> (31 - i)) & 1;
+    newData[i] = (newData[i] & 0xFE) | bit;
   }
+
+  // Content embedding (4-bit LSB substitution) starting after header
+  // Each channel can store 4 bits. 
+  let secretChannelIndex = 0;
+  for (let i = 32; i < newData.length && secretChannelIndex < secretData.length; i++) {
+    if ((i + 1) % 4 === 0) {
+      newData[i] = coverData[i]; // Keep alpha
+      continue;
+    }
+    // Take top 4 bits of secret and put in bottom 4 bits of cover
+    newData[i] = (coverData[i] & 0xF0) | (secretData[secretChannelIndex] >> 4);
+    secretChannelIndex++;
+  }
+  
   return newData;
 }
 
-export function decodeImageInImage(stegoData: Uint8ClampedArray): Uint8ClampedArray {
-  const secretData = new Uint8ClampedArray(stegoData.length);
-  for (let i = 0; i < stegoData.length; i++) {
+export function decodeImageInImage(stegoData: Uint8ClampedArray): { data: Uint8ClampedArray, width: number, height: number } | null {
+  // Extract dimensions (first 32 bits)
+  let headerBits = 0;
+  for (let i = 0; i < 32; i++) {
+    const bit = stegoData[i] & 1;
+    headerBits = (headerBits << 1) | bit;
+  }
+
+  const width = (headerBits >> 16) & 0xFFFF;
+  const height = headerBits & 0xFFFF;
+
+  if (width === 0 || height === 0 || width > 10000 || height > 10000) {
+    return null;
+  }
+
+  const secretData = new Uint8ClampedArray(width * height * 4);
+  let secretChannelIndex = 0;
+  
+  for (let i = 32; i < stegoData.length && secretChannelIndex < secretData.length; i++) {
     if ((i + 1) % 4 === 0) {
-      secretData[i] = 255; // Full alpha
+      secretData[secretChannelIndex] = 255; // Full alpha
+      secretChannelIndex++;
       continue;
     }
-    // Stego Low 4 bits shifted to High 4 bits
-    secretData[i] = (stegoData[i] & 0x0F) << 4;
+    // Extract lower 4 bits and shift left
+    secretData[secretChannelIndex] = (stegoData[i] & 0x0F) << 4;
+    secretChannelIndex++;
   }
-  return secretData;
+
+  return { data: secretData, width, height };
 }
 
 /**

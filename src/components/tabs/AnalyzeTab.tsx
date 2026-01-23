@@ -11,7 +11,8 @@ import {
   Search,
   CheckCircle2,
   AlertTriangle,
-  History
+  History,
+  Eye
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,6 +21,7 @@ import { Card } from '@/components/ui/card';
 import { forensicScan, getBitPlane } from '@/lib/stego/analysis';
 import { calculateMetrics } from '@/lib/stego/metrics';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
 interface AnalysisResult {
   id: string;

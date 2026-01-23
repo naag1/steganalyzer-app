@@ -36,7 +36,11 @@ export function chiSquareAttack(data: Uint8ClampedArray): number {
   // Normalized score: 0 (Natural) to 1 (Suspicious)
   // In stego detection, we want 1 when the PoVs are very close.
   const threshold = k * 1.5; // Heuristic
-  const score = Math.max(0, 1 - (chiSquare / (threshold || 1)));
+  let score = Math.max(0, 1 - (chiSquare / (threshold || 1)));
+  
+  // High sensitivity for forensic tool: if PoVs are extremely uniform, flag 100%
+  if (chiSquare < k * 0.1) score = 1.0;
+  
   return Math.min(score, 1);
 }
 

@@ -116,7 +116,7 @@ export function EncodeDecodeTab() {
           ctx2.drawImage(secretImg, 0, 0, coverImg.width, coverImg.height);
           const secretData = ctx2.getImageData(0, 0, coverImg.width, coverImg.height);
 
-          const encoded = encodeImageInImage(coverData.data, secretData.data);
+          const encoded = encodeImageInImage(coverData.data, secretData.data, secretImg.width, secretImg.height);
           ctx.putImageData(new ImageData(encoded, coverImg.width, coverImg.height), 0, 0);
           setResultUrl(canvas.toDataURL('image/png'));
         }
@@ -139,14 +139,18 @@ export function EncodeDecodeTab() {
               return;
             }
 
-            // Try Image in Image extraction (always possible to try)
-            const decodedImageData = decodeImageInImage(imageData);
-            const outCanvas = document.createElement('canvas');
-            outCanvas.width = img.width;
-            outCanvas.height = img.height;
-            outCanvas.getContext('2d')!.putImageData(new ImageData(decodedImageData, img.width, img.height), 0, 0);
-            setExtractedImage(outCanvas.toDataURL('image/png'));
-            setExtractedData('Extracted potential image payload.');
+            // Try Image in Image extraction
+            const result = decodeImageInImage(imageData);
+            if (result) {
+              const outCanvas = document.createElement('canvas');
+              outCanvas.width = result.width;
+              outCanvas.height = result.height;
+              outCanvas.getContext('2d')!.putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
+              setExtractedImage(outCanvas.toDataURL('image/png'));
+              setExtractedData('Extracted potential image payload.');
+            } else {
+              setExtractedData('No StegX signature or valid image payload detected.');
+            }
           };
           img.src = preview!;
         } else if (file.type === 'audio/wav') {
