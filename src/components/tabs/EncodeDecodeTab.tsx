@@ -18,30 +18,41 @@ import { Badge } from '@/components/ui/badge';
 
 export function EncodeDecodeTab() {
   const [activeTab, setActiveTab] = React.useState<'encode' | 'extract'>('encode');
-  const [fileType, setFileType] = React.useState<'image' | 'audio'>('image');
+  const [mode, setMode] = React.useState<'text' | 'image' | 'audio'>('text');
   const [file, setFile] = React.useState<File | null>(null);
+  const [secretFile, setSecretFile] = React.useState<File | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
+  const [secretPreview, setSecretPreview] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState('');
   const [resultUrl, setResultUrl] = React.useState<string | null>(null);
   const [extractedData, setExtractedData] = React.useState<string | null>(null);
+  const [extractedImage, setExtractedImage] = React.useState<string | null>(null);
   const [isProcessing, setIsProcessing] = React.useState(false);
 
-  const onFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileUpload = (e: React.ChangeEvent<HTMLInputElement>, isSecret = false) => {
     const uploadedFile = e.target.files?.[0];
     if (!uploadedFile) return;
 
-    setFile(uploadedFile);
-    setResultUrl(null);
-    setExtractedData(null);
+    if (isSecret) {
+      setSecretFile(uploadedFile);
+      if (uploadedFile.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => setSecretPreview(event.target?.result as string);
+        reader.readAsDataURL(uploadedFile);
+      }
+    } else {
+      setFile(uploadedFile);
+      setResultUrl(null);
+      setExtractedData(null);
+      setExtractedImage(null);
 
-    if (uploadedFile.type.startsWith('image/')) {
-      setFileType('image');
-      const reader = new FileReader();
-      reader.onload = (event) => setPreview(event.target?.result as string);
-      reader.readAsDataURL(uploadedFile);
-    } else if (uploadedFile.type === 'audio/wav') {
-      setFileType('audio');
-      setPreview(null);
+      if (uploadedFile.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => setPreview(event.target?.result as string);
+        reader.readAsDataURL(uploadedFile);
+      } else if (uploadedFile.type === 'audio/wav') {
+        setPreview(null);
+      }
     }
   };
 
@@ -51,30 +62,65 @@ export function EncodeDecodeTab() {
 
     try {
       if (activeTab === 'encode') {
-        if (!message) throw new Error('Message is required');
+        if (mode === 'text' && !message) throw new Error('Message is required');
+        if (mode === 'image' && !secretFile) throw new Error('Secret image is required');
         
-        if (fileType === 'image') {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, img.width, img.height);
-            const encoded = encodeLSB(imageData.data, message);
-            ctx.putImageData(new ImageData(encoded, img.width, img.height), 0, 0);
-            setResultUrl(canvas.toDataURL('image/png'));
-          };
-          img.src = preview!;
-        } else {
-          const buffer = await file.arrayBuffer();
-          const encodedBuffer = await encodeAudioLSB(buffer, message);
-          const blob = new Blob([encodedBuffer], { type: 'audio/wav' });
-          setResultUrl(URL.createObjectURL(blob));
+        if (mode === 'text') {
+          if (file.type.startsWith('image/')) {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d')!;
+              ctx.drawImage(img, 0, 0);
+              const imageData = ctx.getImageData(0, 0, img.width, img.height);
+              const encoded = encodeLSB(imageData.data, message);
+              ctx.putImageData(new ImageData(encoded, img.width, img.height), 0, 0);
+              setResultUrl(canvas.toDataURL('image/png'));
+            };
+            img.src = preview!;
+          } else if (file.type === 'audio/wav') {
+            const buffer = await file.arrayBuffer();
+            const encodedBuffer = await encodeAudioLSB(buffer, message);
+            const blob = new Blob([encodedBuffer], { type: 'audio/wav' });
+            setResultUrl(URL.createObjectURL(blob));
+          }
+        } else if (mode === 'image') {
+          // Image in Image
+          const coverImg = new Image();
+          const secretImg = new Image();
+          
+          await new Promise<void>((resolve) => {
+            let loaded = 0;
+            const check = () => { if (++loaded === 2) resolve(); };
+            coverImg.onload = check;
+            secretImg.onload = check;
+            coverImg.src = preview!;
+            secretImg.src = secretPreview!;
+          });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = coverImg.width;
+          canvas.height = coverImg.height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(coverImg, 0, 0);
+          const coverData = ctx.getImageData(0, 0, coverImg.width, coverImg.height);
+
+          const canvas2 = document.createElement('canvas');
+          canvas2.width = coverImg.width;
+          canvas2.height = coverImg.height;
+          const ctx2 = canvas2.getContext('2d')!;
+          ctx2.drawImage(secretImg, 0, 0, coverImg.width, coverImg.height);
+          const secretData = ctx2.getImageData(0, 0, coverImg.width, coverImg.height);
+
+          const encoded = encodeImageInImage(coverData.data, secretData.data);
+          ctx.putImageData(new ImageData(encoded, coverImg.width, coverImg.height), 0, 0);
+          setResultUrl(canvas.toDataURL('image/png'));
         }
       } else {
-        if (fileType === 'image') {
+        // Extraction
+        if (file.type.startsWith('image/')) {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
@@ -83,11 +129,25 @@ export function EncodeDecodeTab() {
             const ctx = canvas.getContext('2d')!;
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, img.width, img.height).data;
-            const result = decodeLSB(imageData);
-            setExtractedData(result.detected ? result.message || 'No message' : 'No StegX signature detected.');
+            
+            // Try Text first
+            const textResult = decodeLSB(imageData);
+            if (textResult.detected) {
+              setExtractedData(textResult.message || 'No message');
+              return;
+            }
+
+            // Try Image in Image extraction (always possible to try)
+            const decodedImageData = decodeImageInImage(imageData);
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = img.width;
+            outCanvas.height = img.height;
+            outCanvas.getContext('2d')!.putImageData(new ImageData(decodedImageData, img.width, img.height), 0, 0);
+            setExtractedImage(outCanvas.toDataURL('image/png'));
+            setExtractedData('Extracted potential image payload.');
           };
           img.src = preview!;
-        } else {
+        } else if (file.type === 'audio/wav') {
           const buffer = await file.arrayBuffer();
           const result = decodeAudioLSB(buffer);
           setExtractedData(result.detected ? result.message || 'No message' : 'No StegX signature detected.');
@@ -102,8 +162,8 @@ export function EncodeDecodeTab() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-20">
-      <div className="flex justify-center">
+    <div className="max-w-6xl mx-auto space-y-8 pb-20">
+      <div className="flex flex-col items-center gap-6">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'encode' | 'extract')} className="w-[400px]">
           <TabsList className="grid w-full grid-cols-2 bg-slate-100 p-1 rounded-xl h-12">
             <TabsTrigger value="encode" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-[#6366f1] data-[state=active]:shadow-sm font-bold transition-all">
@@ -114,6 +174,27 @@ export function EncodeDecodeTab() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {activeTab === 'encode' && (
+          <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+            <Button 
+              variant={mode === 'text' ? 'default' : 'ghost'} 
+              size="sm" 
+              onClick={() => setMode('text')}
+              className={cn("rounded-md px-4", mode === 'text' && "bg-white text-[#6366f1] hover:bg-white")}
+            >
+              Text in File
+            </Button>
+            <Button 
+              variant={mode === 'image' ? 'default' : 'ghost'} 
+              size="sm" 
+              onClick={() => setMode('image')}
+              className={cn("rounded-md px-4", mode === 'image' && "bg-white text-[#6366f1] hover:bg-white")}
+            >
+              Image in Image
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -125,61 +206,84 @@ export function EncodeDecodeTab() {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-[#6366f1]" />
-                Source Content
+                {mode === 'image' && activeTab === 'encode' ? 'Cover Image' : 'Source File'}
               </h3>
-              {file && (
-                <Badge variant="secondary" className="bg-slate-50 text-slate-500 border-[#e1e4e8]">
-                  {fileType === 'image' ? 'Image Mode' : 'Audio Mode'}
-                </Badge>
-              )}
             </div>
 
             <div className="group relative aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-[#e1e4e8] hover:border-[#6366f1]/50 transition-all overflow-hidden flex flex-col items-center justify-center text-center p-6">
               {preview ? (
                 <img src={preview} className="absolute inset-0 w-full h-full object-contain p-2" alt="Preview" />
-              ) : fileType === 'audio' && file ? (
+              ) : file && file.type === 'audio/wav' ? (
                 <div className="space-y-3">
                   <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mx-auto">
                     <Music className="w-8 h-8 text-[#6366f1]" />
                   </div>
                   <p className="font-bold text-slate-700">{file.name}</p>
-                  <p className="text-xs text-slate-400">16-bit PCM WAV loaded</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mx-auto text-slate-300 group-hover:text-[#6366f1] transition-colors">
                     <Binary className="w-8 h-8" />
                   </div>
-                  <div>
-                    <p className="font-bold text-slate-900">Drop your file here</p>
-                    <p className="text-xs text-slate-400 mt-1">Supports PNG, JPG, or WAV</p>
-                  </div>
+                  <p className="font-bold text-slate-900">Upload Base File</p>
                 </div>
               )}
-              <input type="file" onChange={onFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*,audio/wav" />
+              <input type="file" onChange={(e) => onFileUpload(e)} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*,audio/wav" />
             </div>
+
+            {mode === 'image' && activeTab === 'encode' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-[#6366f1]" />
+                  Secret Image
+                </h3>
+                <div className="group relative aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-[#e1e4e8] hover:border-[#6366f1]/50 transition-all overflow-hidden flex flex-col items-center justify-center text-center p-6">
+                  {secretPreview ? (
+                    <img src={secretPreview} className="absolute inset-0 w-full h-full object-contain p-2" alt="Secret Preview" />
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center mx-auto text-slate-300 group-hover:text-[#6366f1] transition-colors">
+                        <ImageIcon className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-900">Upload Payload Image</p>
+                    </div>
+                  )}
+                  <input type="file" onChange={(e) => onFileUpload(e, true)} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
+                </div>
+              </div>
+            )}
           </div>
 
           {activeTab === 'encode' ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Secret Message</h3>
-                <Sparkles className="w-4 h-4 text-[#6366f1]" />
+            mode === 'text' ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Secret Message</h3>
+                  <Sparkles className="w-4 h-4 text-[#6366f1]" />
+                </div>
+                <Textarea 
+                  placeholder="Enter secret text..." 
+                  className="min-h-[120px] rounded-xl border-[#e1e4e8] focus-visible:ring-[#6366f1] resize-none p-4"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                />
+                <Button 
+                  onClick={handleAction}
+                  disabled={!file || !message || isProcessing}
+                  className="w-full h-14 bg-[#6366f1] hover:bg-[#4f46e5] rounded-xl font-bold text-lg"
+                >
+                  {isProcessing ? 'Encoding...' : 'Execute Encoding'}
+                </Button>
               </div>
-              <Textarea 
-                placeholder="Enter the sensitive information you wish to mask..." 
-                className="min-h-[150px] rounded-xl border-[#e1e4e8] focus-visible:ring-[#6366f1] resize-none p-4"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
+            ) : (
               <Button 
                 onClick={handleAction}
-                disabled={!file || !message || isProcessing}
-                className="w-full h-14 bg-[#6366f1] hover:bg-[#4f46e5] rounded-xl font-bold text-lg shadow-lg shadow-indigo-100 transition-all hover:scale-[1.01]"
+                disabled={!file || !secretFile || isProcessing}
+                className="w-full h-14 bg-[#6366f1] hover:bg-[#4f46e5] rounded-xl font-bold text-lg mt-4"
               >
-                {isProcessing ? 'Encoding...' : 'Execute StegX Encoding'}
+                {isProcessing ? 'Blending...' : 'Blend Images'}
               </Button>
-            </div>
+            )
           ) : (
             <div className="space-y-6 pt-4">
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-3">
@@ -188,7 +292,7 @@ export function EncodeDecodeTab() {
                   Extraction Protocol
                 </h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Orchid Pro will perform a signature-aware scan for StegX headers. If found, the 32-bit payload will be reconstructed.
+                  StegAnalyzer will perform a signature-aware scan for StegX headers. If no header is found, it will attempt a 4-bit LSB image reconstruction.
                 </p>
               </div>
               <Button 
@@ -216,17 +320,17 @@ export function EncodeDecodeTab() {
             {activeTab === 'encode' ? (
               resultUrl ? (
                 <div className="w-full h-full flex flex-col items-center gap-6">
-                  {fileType === 'image' ? (
+                  {file?.type.startsWith('image/') || mode === 'image' ? (
                     <img src={resultUrl} className="max-h-[300px] object-contain rounded-lg shadow-xl" alt="Result" />
                   ) : (
                     <div className="p-10 rounded-full bg-white shadow-xl">
                       <Music className="w-16 h-16 text-[#6366f1]" />
                     </div>
                   )}
-                  <Button asChild className="bg-[#6366f1] hover:bg-[#4f46e5] px-8 py-6 rounded-xl font-bold shadow-lg shadow-indigo-100">
-                    <a href={resultUrl} download={`steg_output_${file?.name}`}>
+                  <Button asChild className="bg-[#6366f1] hover:bg-[#4f46e5] px-8 py-6 rounded-xl font-bold">
+                    <a href={resultUrl} download={`stego_output_${file?.name || 'file'}.png`}>
                       <Download className="w-5 h-5 mr-2" />
-                      Download Forensically Prepared File
+                      Download Stego File
                     </a>
                   </Button>
                 </div>
@@ -234,36 +338,31 @@ export function EncodeDecodeTab() {
                 <div className="text-center space-y-2 opacity-30">
                   <Sparkles className="w-12 h-12 mx-auto mb-4" />
                   <p className="font-bold text-slate-900">Awaiting Execution</p>
-                  <p className="text-xs text-slate-500">The processed output will appear here</p>
                 </div>
               )
             ) : (
-              <div className="w-full h-full">
+              <div className="w-full h-full flex flex-col items-center">
+                {extractedImage && (
+                  <div className="mb-6 w-full flex flex-col items-center gap-4">
+                    <img src={extractedImage} className="max-h-[250px] object-contain rounded-lg border shadow-sm" alt="Extracted Image" />
+                    <Button asChild size="sm" variant="outline" className="border-[#6366f1] text-[#6366f1]">
+                      <a href={extractedImage} download="extracted_image.png">Download Image Payload</a>
+                    </Button>
+                  </div>
+                )}
                 {extractedData ? (
-                  <div className="w-full h-full bg-white rounded-xl border border-[#e1e4e8] p-6 font-mono text-sm overflow-y-auto whitespace-pre-wrap text-slate-700 shadow-inner">
+                  <div className="w-full bg-white rounded-xl border border-[#e1e4e8] p-6 font-mono text-sm overflow-y-auto whitespace-pre-wrap text-slate-700 shadow-inner min-h-[150px]">
                     {extractedData}
                   </div>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-center space-y-2 opacity-30">
                     <Eye className="w-12 h-12 mx-auto mb-4" />
                     <p className="font-bold text-slate-900">No Data Recovered</p>
-                    <p className="text-xs text-slate-500">Extracted information will be displayed here</p>
                   </div>
                 )}
               </div>
             )}
           </div>
-
-          {activeTab === 'encode' && resultUrl && (
-            <div className="p-4 bg-[#6366f1]/5 rounded-xl border border-[#6366f1]/10 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#6366f1] flex items-center justify-center text-white">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <p className="text-[11px] text-[#6366f1] font-medium leading-tight">
-                This file has been modified using the StegX protocol. It is recommended to verify its integrity using the Analyze tab before distribution.
-              </p>
-            </div>
-          )}
         </Card>
       </div>
     </div>

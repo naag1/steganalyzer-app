@@ -1,5 +1,5 @@
 ## Project Summary
-"Orchid Pro" is a professional-grade Steganalysis and Steganography application designed for cybersecurity researchers and forensic analysts. It provides a suite of tools to encode hidden data into images/text, decode them, and perform advanced statistical detection (Chi-Square, BPCS, RS Steganalysis) to identify potential steganographic content.
+"StegAnalyzer" is a professional-grade Steganalysis and Steganography application designed for cybersecurity researchers and forensic analysts. It provides a suite of tools to encode hidden data into images, audio, and text, decode them, and perform advanced statistical detection (Chi-Square, BPCS, RS Steganalysis) to identify potential steganographic content.
 
 ## Tech Stack
 - **Framework**: Next.js 15 (App Router)
@@ -17,14 +17,14 @@
 - `src/hooks`: Custom hooks for file processing and analysis.
 
 ## User Preferences
-- **Theme**: Orchid Purple (#9b59b6) and Slate Gray (#2d3436).
+- **Theme**: Clinical White (#ffffff) with Blue accents (#6366f1).
 - **Navigation**: Sidebar-based (similar to DocuSeal).
 - **Component Style**: Named exports, functional components, minimal client-side state where possible.
 
 ## Project Guidelines
 - No comments unless requested.
-- Use Orchid theme consistently.
 - Ensure all steganography logic is purely client-side for security and privacy.
+- Avoid redundancy: Image comparison belongs in the Metrics tab, not the main Analyze view.
 
 ## Common Patterns
 - Batch processing for forensic analysis.

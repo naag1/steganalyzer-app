@@ -23,7 +23,6 @@ const navItems = [
   { id: 'analyze', label: 'Analyze', icon: ShieldAlert },
   { id: 'encode-decode', label: 'Encode / Extraction', icon: Binary },
   { id: 'metrics', label: 'Metrics', icon: BarChart3 },
-  { id: 'reports', label: 'Reports', icon: FileText },
 ];
 
 export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
@@ -38,12 +37,13 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     >
       <div className="flex items-center justify-between p-4 border-b border-[#e1e4e8]">
         {!isCollapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-lg tracking-tight text-slate-900">StegAnalyzer</span>
             </div>
-            <span className="font-bold text-lg tracking-tight text-slate-900">Orchid Pro</span>
-          </div>
+
         )}
         <Button 
           variant="ghost" 
@@ -75,7 +75,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
       <div className="p-4 border-t border-[#e1e4e8]">
         <div className="flex items-center gap-2 px-2 text-xs text-slate-400">
-          {!isCollapsed && <span>v2.0.0 Pro</span>}
+          {!isCollapsed && <span>v2.0.0</span>}
         </div>
       </div>
     </div>

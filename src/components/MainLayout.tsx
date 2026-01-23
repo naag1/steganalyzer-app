@@ -5,7 +5,6 @@ import { Sidebar, TabType } from './Sidebar';
 import { AnalyzeTab } from './tabs/AnalyzeTab';
 import { EncodeDecodeTab } from './tabs/EncodeDecodeTab';
 import { MetricsTab } from './tabs/MetricsTab';
-import { ReportsTab } from './tabs/ReportsTab';
 import { Badge } from '@/components/ui/badge';
 import { Lock } from 'lucide-react';
 
@@ -36,12 +35,12 @@ export function MainLayout() {
         <header className="h-24 flex items-center px-6" />
         
         <div className="flex-1 overflow-y-auto p-8 pt-4">
-          <div className="max-w-6xl mx-auto w-full">
-            {activeTab === 'analyze' && <AnalyzeTab />}
-            {activeTab === 'encode-decode' && <EncodeDecodeTab />}
-            {activeTab === 'metrics' && <MetricsTab />}
-            {activeTab === 'reports' && <ReportsTab />}
-          </div>
+            <div className="max-w-6xl mx-auto w-full">
+              {activeTab === 'analyze' && <AnalyzeTab />}
+              {activeTab === 'encode-decode' && <EncodeDecodeTab />}
+              {activeTab === 'metrics' && <MetricsTab />}
+            </div>
+
         </div>
       </main>
     </div>
