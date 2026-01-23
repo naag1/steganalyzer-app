@@ -10,8 +10,10 @@ import {
   encodeLSB, 
   decodeLSB, 
   encodeAudioLSB, 
-  decodeAudioLSB 
-} from '@/lib/stego/codec';
+  decodeAudioLSB,
+  encodeImageInImage,
+  decodeImageInImage
+} from '@/lib/stego';
 import { cn } from '@/lib/utils';
 
 import { Badge } from '@/components/ui/badge';

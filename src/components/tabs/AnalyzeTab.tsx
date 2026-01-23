@@ -17,19 +17,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { forensicScan } from '@/lib/stego/analysis';
+import { forensicScan, getBitPlane } from '@/lib/stego/analysis';
 import { calculateMetrics } from '@/lib/stego/metrics';
-import { 
-  BarChart as RechartsBarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
-import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface AnalysisResult {
   id: string;
@@ -41,13 +31,15 @@ interface AnalysisResult {
   type?: string;
   message?: string;
   file: File;
+  metrics?: { psnr: number, mse: number };
+  bitPlane?: string;
 }
 
 export function AnalyzeTab() {
   const [results, setResults] = React.useState<AnalysisResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
-  const [compareImages, setCompareImages] = React.useState<{ cover?: File, stego?: File }>({});
-  const [metricsResult, setMetricsResult] = React.useState<{ psnr: number, mse: number } | null>(null);
+  const [referenceFile, setReferenceFile] = React.useState<File | null>(null);
+  const [selectedBitPlane, setSelectedBitPlane] = React.useState<string | null>(null);
 
   const onFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -69,6 +61,12 @@ export function AnalyzeTab() {
   const processFiles = async (files: File[], metadata: AnalysisResult[]) => {
     setIsAnalyzing(true);
     
+    // Get reference data if available
+    let referenceData: Uint8ClampedArray | null = null;
+    if (referenceFile) {
+      referenceData = await getImageData(referenceFile);
+    }
+    
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const meta = metadata[i];
@@ -76,15 +74,62 @@ export function AnalyzeTab() {
       setResults(prev => prev.map(r => r.id === meta.id ? { ...r, status: 'analyzing' } : r));
 
       const scanResult = await forensicScan(file);
+      let metrics;
+
+      if (referenceData && file.type.startsWith('image/')) {
+        const stegoData = await getImageData(file);
+        try {
+          metrics = calculateMetrics(referenceData, stegoData);
+        } catch (e) {
+          console.warn('Reference dimensions mismatch for', file.name);
+        }
+      }
 
       setResults(prev => prev.map(r => r.id === meta.id ? { 
         ...r, 
         ...scanResult,
+        metrics,
         status: 'completed'
       } : r));
     }
     
     setIsAnalyzing(false);
+  };
+
+  const getImageData = (file: File): Promise<Uint8ClampedArray> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0);
+          resolve(ctx.getImageData(0, 0, img.width, img.height).data);
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const showBitPlane = async (result: AnalysisResult) => {
+    const data = await getImageData(result.file);
+    const plane = getBitPlane(data, 0); // LSB
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.putImageData(new ImageData(plane, img.width, img.height), 0, 0);
+      setSelectedBitPlane(canvas.toDataURL());
+    };
+    const reader = new FileReader();
+    reader.onload = (e) => { img.src = e.target?.result as string; };
+    reader.readAsDataURL(result.file);
   };
 
   const removeResult = (id: string) => {
@@ -101,63 +146,46 @@ export function AnalyzeTab() {
     URL.revokeObjectURL(url);
   };
 
-  const runMetrics = async () => {
-    if (!compareImages.cover || !compareImages.stego) return;
-    
-    const getImageData = (file: File): Promise<Uint8ClampedArray> => {
-      return new Promise((resolve) => {
-        const img = new Image();
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, 0, 0);
-            resolve(ctx.getImageData(0, 0, img.width, img.height).data);
-          };
-          img.src = e.target?.result as string;
-        };
-        reader.readAsDataURL(file);
-      });
-    };
-
-    const coverData = await getImageData(compareImages.cover);
-    const stegoData = await getImageData(compareImages.stego);
-    const metrics = calculateMetrics(coverData, stegoData);
-    setMetricsResult(metrics);
-  };
-
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Half: Batch Analysis & Recent Scans */}
-        <div className="space-y-6">
-          <Card className="p-8 border-[#e1e4e8] shadow-sm bg-white overflow-hidden relative group">
-            <div className="absolute top-0 left-0 w-1 h-full bg-[#6366f1]" />
-            <div className="flex flex-col items-center justify-center gap-6 py-4">
-              <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-[#6366f1] group-hover:scale-110 transition-transform duration-300">
-                <Upload className="w-8 h-8" />
+          <div className="space-y-6">
+            <Card className="p-8 border-[#e1e4e8] shadow-sm bg-white overflow-hidden relative group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-[#6366f1]" />
+              <div className="flex flex-col items-center justify-center gap-6 py-4">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-[#6366f1] group-hover:scale-110 transition-transform duration-300">
+                  <Upload className="w-8 h-8" />
+                </div>
+                <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-bold text-slate-900">Batch Analysis</h2>
+                  <p className="text-slate-500 max-w-sm mx-auto">
+                    Upload multiple files for automatic detection and extraction.
+                  </p>
+                </div>
+                <div className="w-full max-w-xs space-y-3">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block text-center">
+                    Optional: Reference Image (for PSNR/MSE)
+                  </label>
+                  <input 
+                    type="file" 
+                    onChange={(e) => setReferenceFile(e.target.files?.[0] || null)}
+                    className="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-[#6366f1] hover:file:bg-indigo-100 w-full"
+                  />
+                </div>
+                <input 
+                  type="file" 
+                  multiple 
+                  onChange={onFileUpload} 
+                  className="hidden" 
+                  id="analyze-upload" 
+                />
+                <Button asChild className="bg-[#6366f1] hover:bg-[#4f46e5] text-white px-8 rounded-full shadow-lg shadow-indigo-100">
+                  <label htmlFor="analyze-upload" className="cursor-pointer">Start Batch Scan</label>
+                </Button>
               </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-900">Batch Analysis</h2>
-                <p className="text-slate-500 max-w-sm mx-auto">
-                  Upload multiple files for automatic detection and extraction.
-                </p>
-              </div>
-              <input 
-                type="file" 
-                multiple 
-                onChange={onFileUpload} 
-                className="hidden" 
-                id="analyze-upload" 
-              />
-              <Button asChild className="bg-[#6366f1] hover:bg-[#4f46e5] text-white px-8 rounded-full shadow-lg shadow-indigo-100">
-                <label htmlFor="analyze-upload" className="cursor-pointer">Start Batch Scan</label>
-              </Button>
-            </div>
-          </Card>
+            </Card>
+
 
           <Card className="border-[#e1e4e8] shadow-sm bg-white">
             <div className="p-4 border-b border-[#e1e4e8] flex items-center justify-between">
@@ -277,38 +305,80 @@ export function AnalyzeTab() {
                         <span className="text-slate-500">Protocol</span>
                         <span className="font-mono font-bold text-slate-700">{result.type || 'Generic LSB'}</span>
                       </li>
-                      <li className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500">Chi-Square</span>
-                        <span className="font-mono font-bold text-slate-700">{(result.probability).toFixed(4)}</span>
-                      </li>
-                    </ul>
+                        <li className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500">Chi-Square</span>
+                          <span className="font-mono font-bold text-slate-700">{(result.probability).toFixed(4)}</span>
+                        </li>
+                        {result.metrics && (
+                          <>
+                            <li className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-500">PSNR</span>
+                              <span className="font-mono font-bold text-[#6366f1]">{result.metrics.psnr.toFixed(2)} dB</span>
+                            </li>
+                            <li className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-500">MSE</span>
+                              <span className="font-mono font-bold text-[#6366f1]">{result.metrics.mse.toFixed(4)}</span>
+                            </li>
+                          </>
+                        )}
+                      </ul>
 
-                    {result.detected && result.message && (
-                      <div className="pt-3 border-t border-slate-200">
-                        <Button 
-                          onClick={() => downloadMessage(result.message!, result.name)}
-                          className="w-full bg-[#6366f1] hover:bg-[#4f46e5] flex items-center gap-2 py-4 rounded-xl text-sm"
-                        >
-                          <Download className="w-4 h-4" />
-                          Download Hidden Payload
-                        </Button>
+                      <div className="flex gap-2 pt-2">
+                        {result.file.type.startsWith('image/') && (
+                          <Button 
+                            variant="outline"
+                            size="sm"
+                            onClick={() => showBitPlane(result)}
+                            className="flex-1 text-[10px] h-8 border-[#e1e4e8] hover:border-[#6366f1] hover:text-[#6366f1]"
+                          >
+                            <Eye className="w-3 h-3 mr-1" />
+                            Bit-Plane View
+                          </Button>
+                        )}
+                        {result.detected && result.message && (
+                          <Button 
+                            onClick={() => downloadMessage(result.message!, result.name)}
+                            className="flex-1 bg-[#6366f1] hover:bg-[#4f46e5] h-8 text-[10px]"
+                          >
+                            <Download className="w-3 h-3 mr-1" />
+                            Download Payload
+                          </Button>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
+                </Card>
+              )).reverse()
+            ) : (
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-[#e1e4e8] rounded-3xl bg-slate-50/30">
+                <FileSearch className="w-12 h-12 text-slate-200 mb-4" />
+                <h3 className="text-lg font-bold text-slate-400">Analysis Results</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto mt-2 leading-relaxed">
+                  Scan output will appear here after processing.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <Dialog open={!!selectedBitPlane} onOpenChange={() => setSelectedBitPlane(null)}>
+          <DialogContent className="max-w-4xl bg-white border-[#e1e4e8]">
+            <DialogHeader>
+              <DialogTitle className="text-slate-900">LSB Bit-Plane Visualization</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4">
+              {selectedBitPlane && (
+                <div className="relative group bg-slate-950 rounded-xl overflow-hidden border border-slate-800 p-2 shadow-2xl">
+                  <img src={selectedBitPlane} className="max-h-[70vh] object-contain image-pixelated" alt="Bit Plane" />
                 </div>
-              </Card>
-            )).reverse()
-          ) : (
-            <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-[#e1e4e8] rounded-3xl bg-slate-50/30">
-              <FileSearch className="w-12 h-12 text-slate-200 mb-4" />
-              <h3 className="text-lg font-bold text-slate-400">Analysis Results</h3>
-              <p className="text-xs text-slate-400 max-w-xs mx-auto mt-2 leading-relaxed">
-                Scan output will appear here after processing.
+              )}
+              <p className="text-xs text-slate-500 text-center max-w-md">
+                This visualization displays the Least Significant Bit (LSB) of each pixel. High entropy or recognizable patterns in this plane often indicate steganographic embedding.
               </p>
             </div>
-          )}
-        </div>
+          </DialogContent>
+        </Dialog>
       </div>
-    </div>
-  );
-}
+    );
+  }
+
