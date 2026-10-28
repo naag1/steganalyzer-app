@@ -4,15 +4,14 @@ import * as React from 'react';
 import { 
   ShieldAlert, 
   Binary, 
-  BarChart3, 
-  FileText, 
+  BarChart3,  
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
-export type TabType = 'analyze' | 'encode-decode' | 'metrics' | 'reports';
+export type TabType = 'encode-decode' | 'metrics' | 'reports';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -20,7 +19,6 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'analyze', label: 'Analyze', icon: ShieldAlert },
   { id: 'encode-decode', label: 'Encode / Extraction', icon: Binary },
   { id: 'metrics', label: 'Metrics', icon: BarChart3 },
 ];
